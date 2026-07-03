@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Financiero Avanzado</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
+
+    <div class="container mx-auto px-4 py-6 max-w-6xl">
+        
+        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-5 mb-6">
+            <div>
+                <h1 class="text-3xl font-black tracking-tight bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">FINANZAS 360</h1>
+                <p class="text-xs text-slate-400 mt-1">Análisis inteligente del 25 al 25 de cada mes</p>
+            </div>
+            
+            <div class="flex items-center gap-2 bg-slate-900 border border-slate-800 p-2 rounded-xl shadow-lg">
+                <label for="selector-mes" class="text-xs font-bold uppercase tracking-wider text-slate-400 px-2">Periodo:</label>
+                <select id="selector-mes" onchange="filtrarPorMes()" class="bg-slate-950 border border-slate-700 text-sm rounded-lg font-semibold text-emerald-400 p-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer">
+                    </select>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl shadow-md">
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-400">💰 Total Ingresos</p>
+                <p id="total-ingresos" class="text-2xl font-black text-emerald-400 mt-2">S/. 0.00</p>
+            </div>
+            <div class="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl shadow-md">
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-400">📉 Total Gastos</p>
+                <p id="total-gastos" class="text-2xl font-black text-rose-400 mt-2">S/. 0.00</p>
+            </div>
+            <div class="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl shadow-md">
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-400">⚖️ Balance Neto</p>
+                <p id="balance-neto" class="text-2xl font-black mt-2">S/. 0.00</p>
+            </div>
+            <div id="card-estado" class="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl shadow-md flex flex-col justify-center items-center text-center">
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">📢 Diagnóstico</p>
+                <span id="txt-estado" class="text-lg font-extrabold tracking-wide">Cargando...</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <div class="bg-slate-900/40 border border-slate-900 p-5 rounded-2xl h-[380px] flex flex-col">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 mb-4">🍕 ¿En qué se va el dinero?</h3>
+                <div class="relative flex-1 min-h-0 w-full flex justify-center items-center">
+                    <canvas id="graficoDona"></canvas>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 bg-slate-900/40 border border-slate-900 p-5 rounded-2xl h-[380px] flex flex-col">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 mb-4">🔍 Detalle de Movimientos del Periodo</h3>
+                <div class="overflow-y-auto flex-1 border border-slate-800/60 rounded-xl bg-slate-950/50">
+                    <table class="w-full text-left text-xs">
+                        <thead class="sticky top-0 bg-slate-900 text-slate-400 uppercase font-bold border-b border-slate-800">
+                            <tr>
+                                <th class="p-3">Fecha</th>
+                                <th class="p-3">Comercio</th>
+                                <th class="p-3">Categoría</th>
+                                <th class="p-3 text-right">Monto</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-movimientos" class="divide-y divide-slate-900">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // ⚠️ PEGA AQUÍ TU ENLACE CSV DE LA PESTAÑA "Movimientos_Limpio"
+        const urlCsv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRtTpeHEVxh9WdjoX4BkG1P4EOnLVIzDSvpd5OJ87duv7Qr1ECQnSUwFdJqpJmdRlF81yEu6pPMdx7k/pub?gid=1909194933&single=true&output=tsv";
+
+        let todosLosDatos = [];
+        let graficoDonaInstancia = null;
+
+        async function init() {
+            try {
+                const res = await fetch(urlCsv);
+                const csvTexto = await res.text();
+                
+                // Procesar CSV manejando comillas de textos correctamente
+                const filas = csvTexto.split("\n").map(linea => {
+                    return linea.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/"/g, "").trim());
+                });
+
+                todosLosDatos = [];
+                let mesesSet = new Set();
+
+                // Índices basados en la estructura del script: Col 0: Fecha, Col 3: Comercio, Col 4: Importe, Col 5: Categoría, Col 6: Clasificación, Col 10: Periodo
+                for(let i = 1; i < filas.length; i++) {
+                    const f = filas[i];
+                    if(f.length < 11 || !f[10]) continue;
+
+                    const registro = {
+                        fecha: f[0],
+                        comercio: f[3],
+                        importe: parseFloat(f[4]) || 0,
+                        categoria: f[5],
+                        tipo: f[6], // "Ingreso" o "Gasto"
+                        periodo: f[10]
+                    };
+
+                    todosLosDatos.push(registro);
+                    mesesSet.add(registro.periodo);
+                }
+
+                // Cargar Selector de Meses ordenados de más reciente a más antiguo
+                const selector = document.getElementById("selector-mes");
+                const mesesOrdenados = Array.from(mesesSet).sort().reverse();
+                
+                selector.innerHTML = "";
+                mesesOrdenados.forEach(m => {
+                    selector.innerHTML += `<option value="${m}">${m}</option>`;
+                });
+
+                // Cargar datos del mes inicial
+                if(mesesOrdenados.length > 0) {
+                    filtrarPorMes();
+                }
+
+            } catch (err) {
+                console.error("Error al cargar la API de Google Sheets:", err);
+            }
+        }
+
+        function filtrarPorMes() {
+            const mesSeleccionado = document.getElementById("selector-mes").value;
+            const filtrados = todosLosDatos.filter(r => r.periodo === mesSeleccionado);
+
+            let ingresos = 0;
+            let gastos = 0;
+            let categoriasMonto = {};
+            const tabla = document.getElementById("tabla-movimientos");
+            tabla.innerHTML = "";
+
+            filtrados.forEach(r => {
+                if (r.tipo === "Ingreso") {
+                    ingresos += r.importe;
+                } else {
+                    gastos += r.importe;
+                    // Agrupar gastos por categoría para la Dona
+                    categoriasMonto[r.categoria] = (categoriasMonto[r.categoria] || 0) + r.importe;
+                }
+
+                // Agregar fila a la tabla
+                const esIngreso = r.tipo === "Ingreso";
+                tabla.innerHTML += `
+                    <tr class="hover:bg-slate-900/60 transition-colors">
+                        <td class="p-3 text-slate-400 font-mono">${r.fecha}</td>
+                        <td class="p-3 font-semibold text-slate-200">${r.comercio}</td>
+                        <td class="p-3"><span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${esIngreso ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-300'}">${r.categoria}</span></td>
+                        <td class="p-3 text-right font-bold ${esIngreso ? 'text-emerald-400' : 'text-slate-200'}">S/. ${r.importe.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+
+            // Calcular Balance
+            const balance = ingresos - gastos;
+
+            // Actualizar Tarjetas
+            document.getElementById("total-ingresos").innerText = `S/. ${ingresos.toFixed(2)}`;
+            document.getElementById("total-gastos").innerText = `S/. ${gastos.toFixed(2)}`;
+            
+            const txtBalance = document.getElementById("balance-neto");
+            txtBalance.innerText = `S/. ${balance.toFixed(2)}`;
+            txtBalance.className = `text-2xl font-black mt-2 ${balance < 0 ? 'text-rose-400' : 'text-emerald-400'}`;
+
+            // Actualizar Indicador Semáforo (Diagnóstico)
+            const cardEstado = document.getElementById("card-estado");
+            const txtEstado = document.getElementById("txt-estado");
+            
+            if (balance < 0) {
+                cardEstado.className = "bg-rose-500/10 border border-rose-500/20 p-5 rounded-2xl shadow-md flex flex-col justify-center items-center text-center";
+                txtEstado.innerText = "🚨 EN ROJO";
+                txtEstado.className = "text-lg font-black text-rose-400";
+            } else if (gastos > (ingresos * 0.85)) {
+                cardEstado.className = "bg-amber-500/10 border border-amber-500/20 p-5 rounded-2xl shadow-md flex flex-col justify-center items-center text-center";
+                txtEstado.innerText = "⚠️ AJUSTADO (Gasto > 85%)";
+                txtEstado.className = "text-lg font-black text-amber-400";
+            } else {
+                cardEstado.className = "bg-emerald-500/10 border border-emerald-500/20 p-5 rounded-2xl shadow-md flex flex-col justify-center items-center text-center";
+                txtEstado.innerText = "✅ SALUDABLE";
+                txtEstado.className = "text-lg font-black text-emerald-400";
+            }
+
+            // Destruir gráfico anterior si existe para evitar duplicados al cambiar de mes
+            if (graficoDonaInstancia) {
+                graficoDonaInstancia.destroy();
+            }
+
+            // Crear Gráfico de Dona
+            const labelsDona = Object.keys(categoriasMonto);
+            const datosDona = Object.values(categoriasMonto);
+
+            const ctx = document.getElementById('graficoDona').getContext('2d');
+            graficoDonaInstancia = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labelsDona,
+                    datasets: [{
+                        data: datosDona,
+                        backgroundColor: [
+                            '#f87171', '#60a5fa', '#fbbf24', '#34d399', '#c084fc', '#f472b6', '#2dd4bf', '#a78bfa'
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#0f172a'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: { color: '#94a3b8', font: { size: 10, weight: 'bold' }, boxWidth: 12 }
+                        }
+                    }
+                }
+            });
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
